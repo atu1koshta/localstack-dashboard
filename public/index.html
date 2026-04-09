@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LocalStack UI</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="sidebar">
+    <h1>LocalStack</h1>
+    <a href="#health" class="active" data-page="health">Health</a>
+    <a href="#s3" data-page="s3">S3 Buckets</a>
+    <a href="#sqs" data-page="sqs">SQS Queues</a>
+    <a href="#lambda" data-page="lambda">Lambda</a>
+    <a href="#sns" data-page="sns">SNS Topics</a>
+  </nav>
+  <main class="main" id="content"></main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
