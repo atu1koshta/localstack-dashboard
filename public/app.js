@@ -184,7 +184,7 @@ async function renderLambda() {
         <h3 id="logs-title" style="font-size:14px;color:#58a6ff"></h3>
         <button class="btn" onclick="closeLambdaLogs()">Close</button>
       </div>
-      <div id="lambda-detail" class="card" style="margin-bottom:8px;max-height:35%;overflow-y:auto"></div>
+      <div style="margin-bottom:8px"><input type="text" id="logs-filter" placeholder="Filter logs..." style="width:100%"></div>
       <div id="lambda-logs" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;color:#8b949e"></div>
     </div>
   </div>`;
@@ -200,49 +200,57 @@ async function renderLambda() {
         </div>
         <button class="btn primary" onclick="showLambdaInvoke('${f.name}')">Invoke</button>
       </div>
+      <div id="lambda-detail-${f.name}" style="display:none;margin-top:8px;border-top:1px solid #30363d;padding-top:8px"></div>
     </div>`).join("");
 }
 
 window.openLambdaLogs = async (name) => {
   stopLambdaLogs();
+
+  // collapse any open detail, then show this one
+  document.querySelectorAll("[id^='lambda-detail-']").forEach((el) => { el.style.display = "none"; el.innerHTML = ""; });
+  const detailEl = $(`#lambda-detail-${CSS.escape(name)}`);
+  if (detailEl) {
+    detailEl.style.display = "block";
+    detailEl.innerHTML = "Loading...";
+    const detail = await api(`/lambda/functions/${name}`);
+    const c = detail.config || {};
+    detailEl.innerHTML = `
+      <p>Runtime: ${c.Runtime || "-"} &middot; Handler: ${c.Handler || "-"}</p>
+      <p>Memory: ${c.MemorySize || "-"}MB &middot; Timeout: ${c.Timeout || "-"}s</p>
+      <p>Last modified: ${c.LastModified ? new Date(c.LastModified).toLocaleString() : "-"}</p>
+      ${c.Environment?.Variables ? `<details style="margin-top:6px"><summary style="cursor:pointer;color:#58a6ff">Environment variables</summary><pre style="margin-top:4px">${escapeHtml(JSON.stringify(c.Environment.Variables, null, 2))}</pre></details>` : ""}`;
+  }
+
+  // open logs panel
   const panel = $("#lambda-right");
   const logsEl = $("#lambda-logs");
-  const detailEl = $("#lambda-detail");
+  const filterInput = $("#logs-filter");
   panel.style.display = "flex";
-  $("#logs-title").textContent = name;
-  detailEl.innerHTML = "Loading...";
+  $("#logs-title").textContent = `Logs: ${name}`;
+  filterInput.value = "";
   logsEl.innerHTML = '<span style="color:#484f58">Loading logs...</span>';
-
-  const detail = await api(`/lambda/functions/${name}`);
-  const c = detail.config || {};
-  detailEl.innerHTML = `<h3>Details</h3>
-    <p>Runtime: ${c.Runtime || "-"}</p>
-    <p>Handler: ${c.Handler || "-"}</p>
-    <p>Memory: ${c.MemorySize || "-"}MB &middot; Timeout: ${c.Timeout || "-"}s</p>
-    <p>Last modified: ${c.LastModified ? new Date(c.LastModified).toLocaleString() : "-"}</p>
-    ${c.Environment?.Variables ? `<details style="margin-top:6px"><summary style="cursor:pointer;color:#58a6ff">Environment variables</summary><pre style="margin-top:4px">${escapeHtml(JSON.stringify(c.Environment.Variables, null, 2))}</pre></details>` : ""}`;
 
   let since = Date.now() - 3600000;
   let autoScroll = true;
+  var logLines = [];
 
   logsEl.addEventListener("scroll", () => {
     const atBottom = logsEl.scrollHeight - logsEl.scrollTop - logsEl.clientHeight < 40;
     autoScroll = atBottom;
   });
 
+  filterInput.oninput = () => renderLogLines(logsEl, logLines, filterInput.value, autoScroll);
+
   const fetchLogs = async () => {
     const data = await api(`/lambda/functions/${name}/logs?since=${since}`);
     if (data.events && data.events.length) {
-      if (logsEl.querySelector("span")) logsEl.innerHTML = "";
       for (const e of data.events) {
-        const line = document.createElement("div");
-        const ts = new Date(e.timestamp).toLocaleTimeString();
-        line.innerHTML = `<span style="color:#484f58">${ts}</span> ${escapeHtml(e.message)}`;
-        logsEl.appendChild(line);
+        logLines.push({ ts: e.timestamp, msg: e.message });
       }
       since = data.events[data.events.length - 1].timestamp + 1;
-      if (autoScroll) logsEl.scrollTop = logsEl.scrollHeight;
-    } else if (logsEl.querySelector("span") && logsEl.children.length === 1) {
+      renderLogLines(logsEl, logLines, filterInput.value, autoScroll);
+    } else if (logLines.length === 0) {
       logsEl.innerHTML = '<span style="color:#484f58">No logs yet. Waiting...</span>';
     }
   };
@@ -250,6 +258,27 @@ window.openLambdaLogs = async (name) => {
   fetchLogs();
   lambdaLogInterval = setInterval(fetchLogs, 3000);
 };
+
+function renderLogLines(logsEl, logLines, filter, autoScroll) {
+  const keyword = filter.trim().toLowerCase();
+  const filtered = keyword ? logLines.filter((l) => l.msg.toLowerCase().includes(keyword)) : logLines;
+  if (!filtered.length) {
+    logsEl.innerHTML = keyword
+      ? '<span style="color:#484f58">No matching logs</span>'
+      : '<span style="color:#484f58">No logs yet. Waiting...</span>';
+    return;
+  }
+  logsEl.innerHTML = filtered.map((l) => {
+    const ts = new Date(l.ts).toLocaleTimeString();
+    let msg = escapeHtml(l.msg);
+    if (keyword) {
+      const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      msg = msg.replace(new RegExp(`(${escaped})`, "gi"), '<mark style="background:#a68307;color:#fff;padding:0 2px;border-radius:2px">$1</mark>');
+    }
+    return `<div><span style="color:#484f58">${ts}</span> ${msg}</div>`;
+  }).join("");
+  if (autoScroll) logsEl.scrollTop = logsEl.scrollHeight;
+}
 
 window.closeLambdaLogs = () => {
   stopLambdaLogs();
