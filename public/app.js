@@ -21,12 +21,18 @@ async function api(path, opts) {
 
 // -- Routing --
 const pages = { health: renderHealth, s3: renderS3, sqs: renderSQS, lambda: renderLambda, sns: renderSNS };
+var currentPage = null;
 
 function navigate(page) {
   if (typeof stopLambdaLogs === "function") stopLambdaLogs();
+  currentPage = page;
   document.querySelectorAll(".sidebar a").forEach((a) => a.classList.toggle("active", a.dataset.page === page));
   if (pages[page]) pages[page]();
 }
+
+window.refreshPage = () => {
+  if (currentPage && pages[currentPage]) pages[currentPage]();
+};
 
 document.querySelectorAll(".sidebar a").forEach((a) =>
   a.addEventListener("click", (e) => { e.preventDefault(); navigate(a.dataset.page); })
@@ -167,6 +173,7 @@ window.purgeSQS = async (url) => { if (confirm("Purge all messages?")) { await a
 
 // -- Lambda --
 var lambdaLogInterval = null;
+var lambdaLogLines = null;
 
 function stopLambdaLogs() {
   if (lambdaLogInterval) { clearInterval(lambdaLogInterval); lambdaLogInterval = null; }
@@ -182,7 +189,7 @@ async function renderLambda() {
     <div style="width:45%;display:none;flex-direction:column" id="lambda-right">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <h3 id="logs-title" style="font-size:14px;color:#58a6ff"></h3>
-        <button class="btn" onclick="closeLambdaLogs()">Close</button>
+        <div style="display:flex;gap:6px"><button class="btn" onclick="clearLambdaLogs()">Clear</button><button class="btn" onclick="closeLambdaLogs()">Close</button></div>
       </div>
       <div style="margin-bottom:8px"><input type="text" id="logs-filter" placeholder="Filter logs..." style="width:100%"></div>
       <div id="lambda-logs" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;color:#8b949e"></div>
@@ -199,6 +206,10 @@ async function renderLambda() {
           <p>${f.runtime} &middot; ${f.handler} &middot; ${f.memory}MB &middot; ${f.timeout}s timeout</p>
         </div>
         <button class="btn primary" onclick="showLambdaInvoke('${f.name}')">Invoke</button>
+      </div>
+      <div style="margin-top:6px;display:flex;align-items:center;gap:6px">
+        <code style="font-size:11px;color:#8b949e;background:#161b22;padding:2px 8px;border-radius:4px;word-break:break-all;flex:1">${f.invokeUrl}</code>
+        <button class="btn" style="padding:2px 8px;font-size:11px" onclick="copyText('${f.invokeUrl}')">Copy</button>
       </div>
       <div id="lambda-detail-${f.name}" style="display:none;margin-top:8px;border-top:1px solid #30363d;padding-top:8px"></div>
     </div>`).join("");
@@ -233,7 +244,7 @@ window.openLambdaLogs = async (name) => {
 
   let since = Date.now() - 3600000;
   let autoScroll = true;
-  var logLines = [];
+  var logLines = lambdaLogLines = [];
 
   logsEl.addEventListener("scroll", () => {
     const atBottom = logsEl.scrollHeight - logsEl.scrollTop - logsEl.clientHeight < 40;
@@ -279,6 +290,12 @@ function renderLogLines(logsEl, logLines, filter, autoScroll) {
   }).join("");
   if (autoScroll) logsEl.scrollTop = logsEl.scrollHeight;
 }
+
+window.clearLambdaLogs = () => {
+  if (lambdaLogLines) lambdaLogLines.length = 0;
+  const logsEl = $("#lambda-logs");
+  if (logsEl) logsEl.innerHTML = '<span style="color:#484f58">Logs cleared. Waiting for new logs...</span>';
+};
 
 window.closeLambdaLogs = () => {
   stopLambdaLogs();

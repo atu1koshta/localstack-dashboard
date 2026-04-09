@@ -5,7 +5,7 @@ const {
 const {
   CloudWatchLogsClient, FilterLogEventsCommand,
 } = require("@aws-sdk/client-cloudwatch-logs");
-const { clientConfig } = require("../aws-client");
+const { clientConfig, LOCALSTACK_ENDPOINT } = require("../aws-client");
 
 const router = Router();
 const lambda = new LambdaClient(clientConfig);
@@ -21,6 +21,7 @@ router.get("/functions", async (_req, res) => {
       memory: f.MemorySize,
       timeout: f.Timeout,
       lastModified: f.LastModified,
+      invokeUrl: `${LOCALSTACK_ENDPOINT}/2015-03-31/functions/${f.FunctionName}/invocations`,
     }))
   );
 });
